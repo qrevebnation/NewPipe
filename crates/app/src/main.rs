@@ -1,3 +1,8 @@
+mod api;
+mod screens;
+
+use dioxus::prelude::*;
+
 const CSS: &str = r#"
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -6,6 +11,7 @@ body { margin: 0; background: #111318; color: #e6e8ee; font-family: system-ui, s
 .searchbar { display: flex; gap: 8px; margin-bottom: 12px; }
 .search-input { flex: 1; background: #1b1f27; border: 1px solid #2a303b; border-radius: 8px; color: inherit; padding: 10px 12px; font-size: 15px; }
 .btn { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; }
+.btn.ghost { background: #1b1f27; color: #e6e8ee; }
 .row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid #232833; }
 .thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; background: #1b1f27; flex: none; }
 .meta { flex: 1; min-width: 0; }
@@ -14,12 +20,18 @@ body { margin: 0; background: #111318; color: #e6e8ee; font-family: system-ui, s
 .dur { font-size: 12px; color: #98a0b3; flex: none; }
 .muted { color: #98a0b3; padding: 8px 0; }
 .error { color: #f87171; padding: 8px 0; display: flex; gap: 8px; align-items: center; }
+.topbar { padding: 4px 0 12px; }
+.detail { display: flex; flex-direction: column; gap: 8px; }
+.hero { width: 100%; border-radius: 8px; background: #1b1f27; }
+.dtitle { font-size: 17px; font-weight: 700; }
+.desc { font-size: 13px; color: #c7cddb; white-space: pre-wrap; word-break: break-word; }
 "#;
 
-mod api;
-mod screens;
-
-use dioxus::prelude::*;
+#[derive(Clone, PartialEq)]
+enum Nav {
+    Search,
+    Detail(String),
+}
 
 fn main() {
     dioxus::launch(App);
@@ -27,10 +39,19 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    let mut nav = use_signal(|| Nav::Search);
+
     rsx! {
         style { dangerous_inner_html: "{CSS}" }
         div { class: "app",
-            screens::SearchScreen { on_open: move |_id: String| {} }
+            match nav() {
+                Nav::Search => rsx! {
+                    screens::SearchScreen { on_open: move |id: String| nav.set(Nav::Detail(id)) }
+                },
+                Nav::Detail(id) => rsx! {
+                    screens::DetailScreen { video_id: id, on_back: move |_| nav.set(Nav::Search) }
+                },
+            }
         }
     }
 }
