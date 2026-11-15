@@ -1,3 +1,5 @@
+mod api;
+
 use dioxus::prelude::*;
 
 fn main() {

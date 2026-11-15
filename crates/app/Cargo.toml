@@ -6,3 +6,5 @@ license = "GPL-3.0"
 
 [dependencies]
 dioxus = { version = "0.7", features = ["mobile"] }
+nanopipe-core = { path = "../core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
