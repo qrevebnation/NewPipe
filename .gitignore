@@ -1,36 +1,13 @@
-.gradle/
-local.properties
-.DS_Store
-**/build/
-!src/**/build/
-captures/
-.idea/
-*.iml
-*~
-.weblate
-.kotlin
-*.class
-app/debug/
-app/release/
-
-# vscode / eclipse files
-*.classpath
-*.project
-*.settings
-bin/
-.vscode/
-*.code-workspace
-
-# xcode files
-xcuserdata
-.externalNativeBuild
-.cxx
-node_modules/
-*.xcodeproj/*
-!*.xcodeproj/project.pbxproj
-!*.xcodeproj/xcshareddata/
-!*.xcodeproj/project.xcworkspace/
-!*.xcworkspace/contents.xcworkspacedata
-**/xcshareddata/WorkspaceSettings.xcsettings
+# Rust build output
 /target
 /crates/*/target
+
+# Android / tooling
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# Scratch
+*.log
+np-*.png

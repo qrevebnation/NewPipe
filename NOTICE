@@ -1,0 +1,42 @@
+NanoPipe
+Copyright (C) 2026 qrevebnation
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+Third-party attribution
+-----------------------
+
+NewPipe
+  Project:  https://github.com/TeamNewPipe/NewPipe
+  Authors:  TeamNewPipe and contributors
+  License:  GPL-3.0
+  Note:     This repository is a fork of NewPipe and NanoPipe is inspired by it.
+            The upstream code is preserved on the `dev` branch.
+
+RustyPipe
+  Project:  https://codeberg.org/ThetaDev/rustypipe
+  Authors:  ThetaDev and contributors
+  License:  GPL-3.0
+  Note:     Used as the YouTube / InnerTube extraction library.
+
+Dioxus
+  Project:  https://github.com/DioxusLabs/dioxus
+  License:  MIT OR Apache-2.0
+  Note:     UI framework (mobile / WebView renderer).
+
+AndroidX Media3 (ExoPlayer)
+  Project:  https://github.com/androidx/media
+  License:  Apache-2.0
+  Note:     Background media playback service.
