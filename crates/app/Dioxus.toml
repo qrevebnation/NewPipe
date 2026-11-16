@@ -1,2 +1,10 @@
 [application]
 name = "nanopipe"
+android_main_activity = "android/MainActivity.kt"
+android_manifest = "android/AndroidManifest.xml"
+
+[android]
+gradle_dependencies = [
+    "androidx.media3:media3-exoplayer:1.4.1",
+    "androidx.media3:media3-session:1.4.1",
+]
