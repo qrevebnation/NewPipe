@@ -1,4 +1,5 @@
 mod api;
+mod media;
 mod screens;
 
 use dioxus::prelude::*;

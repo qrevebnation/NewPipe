@@ -8,3 +8,7 @@ license = "GPL-3.0"
 dioxus = { version = "0.7", features = ["mobile"] }
 nanopipe-core = { path = "../core" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
