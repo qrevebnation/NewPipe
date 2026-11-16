@@ -56,6 +56,14 @@ pub fn format_duration(secs: Option<u32>) -> String {
     }
 }
 
+pub fn duration_label(is_live: bool, secs: Option<u32>) -> String {
+    if is_live {
+        String::from("LIVE")
+    } else {
+        format_duration(secs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +86,13 @@ mod tests {
         let s = VideoSummary::new("abc", "café ☕ 日本語", None, Some(90), None, false);
         assert_eq!(s.uploader, "Unknown");
         assert_eq!(s.title, "café ☕ 日本語");
+    }
+
+    #[test]
+    fn duration_label_covers_live_and_missing_duration() {
+        assert_eq!(duration_label(true, None), "LIVE");
+        assert_eq!(duration_label(true, Some(120)), "LIVE");
+        assert_eq!(duration_label(false, None), "");
+        assert_eq!(duration_label(false, Some(187)), "3:07");
     }
 }
