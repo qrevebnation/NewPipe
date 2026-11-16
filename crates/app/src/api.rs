@@ -1,4 +1,4 @@
-use nanopipe_core::{extractor::Client, VideoDetails, VideoSummary};
+use nanopipe_core::{extractor::Client, StreamInfo, VideoDetails, VideoSummary};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -54,6 +54,11 @@ async fn client() -> Result<&'static Client, String> {
 pub async fn search(query: String, limit: usize) -> Result<Vec<VideoSummary>, String> {
     let c = client().await?;
     c.search(&query, limit).await.map_err(|e| e.to_string())
+}
+
+pub async fn streams(id: String) -> Result<StreamInfo, String> {
+    let c = client().await?;
+    c.streams(&id).await.map_err(|e| e.to_string())
 }
 
 pub async fn video(id: String) -> Result<VideoDetails, String> {

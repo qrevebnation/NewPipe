@@ -27,6 +27,9 @@ body { margin: 0; background: #111318; color: #e6e8ee; font-family: system-ui, s
 .detail { display: flex; flex-direction: column; gap: 8px; }
 .hero { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: #1b1f27; }
 .dtitle { font-size: 17px; font-weight: 700; word-break: break-word; }
+.miniplayer { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid #232833; }
+.minititle { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn.small { padding: 6px 10px; font-size: 13px; }
 .desc { font-size: 13px; color: #c7cddb; white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow-y: auto; }
 "#;
 
@@ -47,6 +50,8 @@ fn App() -> Element {
     let results = use_signal(Vec::<VideoSummary>::new);
     let status = use_signal(Status::default);
     let generation = use_signal(|| 0u64);
+    let mut now_playing = use_signal(|| None::<String>);
+    let mut is_playing = use_signal(|| false);
 
     rsx! {
         style { dangerous_inner_html: "{CSS}" }
@@ -62,8 +67,38 @@ fn App() -> Element {
                     }
                 },
                 Nav::Detail(id) => rsx! {
-                    screens::DetailScreen { video_id: id, on_back: move |_| nav.set(Nav::Search) }
+                    screens::DetailScreen {
+                        video_id: id,
+                        now_playing,
+                        is_playing,
+                        on_back: move |_| nav.set(Nav::Search),
+                    }
                 },
+            }
+            if let Some(title) = now_playing() {
+                div { class: "miniplayer",
+                    span { class: "minititle", "{title}" }
+                    button {
+                        class: "btn ghost small",
+                        onclick: move |_| {
+                            let next = !is_playing();
+                            let result = if next { crate::media::resume() } else { crate::media::pause() };
+                            if result.is_ok() {
+                                is_playing.set(next);
+                            }
+                        },
+                        if is_playing() { "Jeda" } else { "Lanjut" }
+                    }
+                    button {
+                        class: "btn ghost small",
+                        onclick: move |_| {
+                            let _ = crate::media::stop();
+                            is_playing.set(false);
+                            now_playing.set(None);
+                        },
+                        "Stop"
+                    }
+                }
             }
         }
     }

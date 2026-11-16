@@ -1,4 +1,5 @@
 use crate::api;
+use crate::media;
 use dioxus::prelude::*;
 use nanopipe_core::{duration_label, VideoDetails};
 
@@ -36,11 +37,45 @@ fn start_load(
     });
 }
 
+fn start_play(
+    video_id: String,
+    mut now_playing: Signal<Option<String>>,
+    mut is_playing: Signal<bool>,
+    mut play_error: Signal<Option<String>>,
+    mut play_busy: Signal<bool>,
+) {
+    play_busy.set(true);
+    play_error.set(None);
+    spawn(async move {
+        match api::streams(video_id).await {
+            Ok(info) => {
+                let title = info.title.clone();
+                match media::play(info) {
+                    Ok(()) => {
+                        now_playing.set(Some(title));
+                        is_playing.set(true);
+                    }
+                    Err(e) => play_error.set(Some(e)),
+                }
+            }
+            Err(e) => play_error.set(Some(e)),
+        }
+        play_busy.set(false);
+    });
+}
+
 #[component]
-pub fn DetailScreen(video_id: String, on_back: EventHandler<()>) -> Element {
+pub fn DetailScreen(
+    video_id: String,
+    now_playing: Signal<Option<String>>,
+    is_playing: Signal<bool>,
+    on_back: EventHandler<()>,
+) -> Element {
     let details = use_signal(|| None::<VideoDetails>);
     let error = use_signal(|| None::<String>);
     let loading = use_signal(|| true);
+    let play_error = use_signal(|| None::<String>);
+    let play_busy = use_signal(|| false);
 
     let initial_id = video_id.clone();
     use_future(move || {
@@ -77,6 +112,17 @@ pub fn DetailScreen(video_id: String, on_back: EventHandler<()>) -> Element {
                         img { class: "hero", src: "{url}", alt: "" }
                     }
                     div { class: "dtitle", "{d.title}" }
+                    button {
+                        class: "btn",
+                        onclick: {
+                            let id = video_id.clone();
+                            move |_| start_play(id.clone(), now_playing, is_playing, play_error, play_busy)
+                        },
+                        if play_busy() { "Menyiapkan..." } else { "Putar audio" }
+                    }
+                    if let Some(msg) = play_error() {
+                        div { class: "error", span { "{msg}" } }
+                    }
                     div { class: "sub", "{d.uploader}" }
                     div { class: "sub",
                         span { "{duration_label(d.is_live, d.duration_s)}" }

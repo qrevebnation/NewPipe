@@ -11,6 +11,10 @@ pub struct StreamInfo {
     pub audio_mime: String,
     pub video_url: Option<String>,
     pub video_mime: Option<String>,
+    /// User-Agent of the client the stream URLs were issued for. YouTube returns
+    /// HTTP 403 for these URLs when they are fetched with a different agent, so the
+    /// player must send this header.
+    pub user_agent: String,
 }
 
 pub fn require_audio<'a>(audio_url: Option<&'a str>, video_id: &str) -> anyhow::Result<&'a str> {
@@ -28,14 +32,12 @@ impl Client {
 
         let audio_url = require_audio(audio.map(|a| a.url.as_str()), video_id)?.to_string();
         let audio_mime = audio.map(|a| a.mime.clone()).unwrap_or_default();
+        let user_agent = self.rp().query().user_agent(player.client_type).to_string();
 
         let details = &player.details;
         Ok(StreamInfo {
             video_id: details.id.clone(),
-            title: details
-                .name
-                .clone()
-                .unwrap_or_else(|| details.id.clone()),
+            title: details.name.clone().unwrap_or_else(|| details.id.clone()),
             uploader: details
                 .channel_name
                 .clone()
@@ -45,6 +47,7 @@ impl Client {
             audio_mime,
             video_url: video.map(|v| v.url.clone()),
             video_mime: video.map(|v| v.mime.clone()),
+            user_agent,
         })
     }
 }
@@ -57,7 +60,10 @@ mod tests {
     fn missing_audio_is_an_error_not_a_silent_player() {
         let err = require_audio(None, "abc123").unwrap_err().to_string();
         assert!(err.contains("abc123"), "error should name the video: {err}");
-        assert!(err.to_lowercase().contains("audio"), "error should mention audio: {err}");
+        assert!(
+            err.to_lowercase().contains("audio"),
+            "error should mention audio: {err}"
+        );
     }
 
     #[test]

@@ -27,5 +27,7 @@ async fn selects_audio_stream() {
     let info = client.streams(&results[0].id).await.unwrap();
     assert!(!info.audio_url.is_empty(), "no audio url");
     println!("audio mime: {}", info.audio_mime);
-    println!("video url present: {}", info.video_url.is_some());
+    println!("AUDIO_URL={}", info.audio_url);
+    println!("USER_AGENT={}", info.user_agent);
+    println!("has_video={}", info.video_url.is_some());
 }
