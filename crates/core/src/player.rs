@@ -16,6 +16,8 @@ pub struct StreamInfo {
     /// Inclusive byte range of the initialization segment.
     pub audio_init_range: Option<(u32, u32)>,
     pub duration_ms: Option<u32>,
+    /// Size of the audio file in bytes, as reported by YouTube.
+    pub audio_size: Option<u64>,
     pub video_url: Option<String>,
     pub video_mime: Option<String>,
     /// User-Agent of the client the stream URLs were issued for. YouTube returns
@@ -49,6 +51,7 @@ impl Client {
         let audio_index_range = range_pair(audio.and_then(|a| a.index_range.clone()));
         let audio_init_range = range_pair(audio.and_then(|a| a.init_range.clone()));
         let duration_ms = audio.and_then(|a| a.duration_ms);
+        let audio_size = audio.map(|a| a.size);
         let user_agent = self.rp().query().user_agent(player.client_type).to_string();
 
         let details = &player.details;
@@ -67,6 +70,7 @@ impl Client {
             audio_index_range,
             audio_init_range,
             duration_ms,
+            audio_size,
             video_url: video.map(|v| v.url.clone()),
             video_mime: video.map(|v| v.mime.clone()),
             user_agent,
@@ -141,6 +145,7 @@ fn sample(duration_ms: Option<u32>) -> StreamInfo {
         audio_index_range: Some((200, 399)),
         audio_init_range: Some((0, 199)),
         duration_ms,
+        audio_size: Some(2_806_189),
         video_url: None,
         video_mime: None,
         user_agent: String::from("agent"),

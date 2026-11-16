@@ -9,5 +9,7 @@ anyhow = "1"
 rustypipe = { version = "0.11", default-features = false, features = ["rustls-tls-webpki-roots"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1", features = ["derive"] }
+tiny_http = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 # Android: rquickjs-sys ships no aarch64-linux-android bindings; enable bindgen to generate them.
 rquickjs = { version = "0.9", default-features = false, features = ["bindgen"] }
