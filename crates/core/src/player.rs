@@ -192,4 +192,46 @@ mod tests {
         assert!(!xml.contains("mediaPresentationDuration"), "{xml}");
         assert!(xml.contains("<Period>"), "{xml}");
     }
+
+    /// Diagnostic: prints the audio URL a given client yields, so the per-URL byte
+    /// budget can be measured per client from the host.
+    #[tokio::test]
+    #[ignore]
+    async fn probe_client_stream() {
+        use rustypipe::client::ClientType;
+
+        let ctype = match std::env::var("NP_CLIENT").unwrap_or_default().as_str() {
+            "Android" => ClientType::Android,
+            "Desktop" => ClientType::Desktop,
+            "Mobile" => ClientType::Mobile,
+            "Tv" => ClientType::Tv,
+            _ => ClientType::Ios,
+        };
+        let dir = std::env::temp_dir().join("nanopipe-probe");
+        std::fs::create_dir_all(&dir).unwrap();
+        let client = Client::new(&dir).unwrap();
+
+        let results = client.search("rust programming", 1).await.unwrap();
+        let id = results[0].id.clone();
+        let player = match client
+            .rp()
+            .query()
+            .player_from_clients(&id, &[ctype])
+            .await
+        {
+            Ok(player) => player,
+            Err(e) => {
+                println!("PROBE_ERROR={e}");
+                return;
+            }
+        };
+        let (_, audio) =
+            player.select_video_audio_stream(&rustypipe::param::StreamFilter::default());
+        let audio = audio.expect("no audio stream");
+
+        println!("PROBE_URL={}", audio.url);
+        println!("PROBE_UA={}", client.rp().query().user_agent(ctype));
+        println!("PROBE_ITAG={}", audio.itag);
+        println!("PROBE_MIME={}", audio.mime);
+    }
 }
