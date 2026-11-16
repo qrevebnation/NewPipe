@@ -14,6 +14,9 @@ import androidx.core.app.NotificationCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.BaseDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
@@ -27,14 +30,36 @@ typealias BuildConfig = com.example.NanopipeApp.BuildConfig
 
 class MainActivity : WryActivity()
 
+/** Logs every byte range the player asks for, so a 403 can be tied to an offset. */
+private class LoggingDataSource(private val upstream: DataSource) : BaseDataSource(true) {
+    override fun open(dataSpec: DataSpec): Long {
+        Log.i(
+            "NanoPipeRange",
+            "open pos=${dataSpec.position} len=${dataSpec.length} flags=${dataSpec.flags}"
+        )
+        return upstream.open(dataSpec)
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+        upstream.read(buffer, offset, length)
+
+    override fun getUri(): Uri? = upstream.uri
+
+    override fun close() {
+        upstream.close()
+    }
+}
+
+private class LoggingFactory(private val inner: DataSource.Factory) : DataSource.Factory {
+    override fun createDataSource(): DataSource = LoggingDataSource(inner.createDataSource())
+}
+
 /**
  * Foreground service that owns the single ExoPlayer instance for the app.
  *
  * YouTube's CDN only serves BOUNDED Range requests: an open-ended range (what a
  * progressive source asks for) answers 302 then 403. Rust therefore hands in a
- * DASH isoff-on-demand manifest built from rustypipe's init/index ranges, and the
- * player streams it with bounded ranges. If no manifest is supplied the service
- * falls back to progressive playback.
+ * DASH isoff-on-demand manifest built from rustypipe's init/index ranges.
  */
 class PlaybackService : Service() {
     companion object {
@@ -101,7 +126,7 @@ class PlaybackService : Service() {
         val existing = player
         if (existing != null) return existing
         val created = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory(userAgent)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(LoggingFactory(httpFactory(userAgent))))
             .build()
         created.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -143,8 +168,12 @@ class PlaybackService : Service() {
         try {
             val manifest = DashManifestParser()
                 .parse(Uri.EMPTY, ByteArrayInputStream(manifestXml.toByteArray()))
-            engine.setMediaSource(DashMediaSource.Factory(httpFactory(userAgent)).createMediaSource(manifest))
+            val source = DashMediaSource
+                .Factory(LoggingFactory(httpFactory(userAgent)))
+                .createMediaSource(manifest)
+            engine.setMediaSource(source)
             engine.prepare()
+            Log.i(TAG, "dash ready: ${manifest.periodCount} period(s)")
             true
         } catch (e: Exception) {
             Log.e(TAG, "dash setup failed, will fall back", e)
