@@ -14,6 +14,10 @@ impl Client {
         Ok(Self { rp })
     }
 
+    pub(crate) fn rp(&self) -> &rustypipe::client::RustyPipe {
+        &self.rp
+    }
+
     pub async fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<VideoSummary>> {
         let q = query.trim();
         if q.is_empty() {
