@@ -71,6 +71,11 @@ pub async fn play(id: String) -> Result<String, String> {
     let c = client().await?;
     let mut info = c.streams(&id).await.map_err(|e| e.to_string())?;
 
+    match crate::media::po_token(id.clone()) {
+        Ok(token) => println!("[pot] token len={}", token.len()),
+        Err(e) => println!("[pot] failed: {e}"),
+    }
+
     let proxy = StreamProxy::start(Arc::clone(&c), &info).map_err(|e| format!("proxy: {e}"))?;
     info.audio_url = proxy.base_url();
     let title = info.title.clone();

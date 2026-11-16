@@ -12,7 +12,10 @@ serde = { version = "1", features = ["derive"] }
 tiny_http = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 # Android: rquickjs-sys ships no aarch64-linux-android bindings; enable bindgen to generate them.
+# Both rustypipe (0.9) and innertube-rs (0.14) bring in rquickjs; neither ships
+# Android bindings, so bindgen is forced on both versions here.
 rquickjs = { version = "0.9", default-features = false, features = ["bindgen"] }
+rquickjs_14 = { package = "rquickjs", version = "0.14", default-features = false, features = ["bindgen"] }
 
 # spike: candidate replacement for the stale rustypipe extractor
 innertube-rs = "0.12"

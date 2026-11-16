@@ -1,4 +1,15 @@
 package dev.dioxus.main
+import android.os.Handler
+import android.os.Looper
+import android.util.Base64
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import org.json.JSONArray
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -208,4 +219,379 @@ class PlaybackService : Service() {
         }
         return built.build()
     }
+}
+
+
+// ---- PO TOKEN (ported from NewPipe's PoTokenWebView) ----
+// Generates a YouTube PO token by running Google's BotGuard program in a WebView,
+// exactly like NewPipe does (po_token.html + JavaScriptUtil + PoTokenWebView).
+private const val POT_TAG = "NanoPipePoToken"
+private const val POT_API_KEY = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
+private const val POT_REQUEST_KEY = "O43z0dpjhgX20SCx4KAo"
+private const val POT_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"
+
+private const val POT_HTML = """<!DOCTYPE html>
+<html lang="en"><head><title></title><script>
+/**
+ * Factory method to create and load a BotGuardClient instance.
+ * @param options - Configuration options for the BotGuardClient.
+ * @returns A promise that resolves to a loaded BotGuardClient instance.
+ */
+function loadBotGuard(challengeData) {
+  this.vm = this[challengeData.globalName];
+  this.program = challengeData.program;
+  this.vmFunctions = {};
+  this.syncSnapshotFunction = null;
+
+  if (!this.vm)
+    throw new Error('[BotGuardClient]: VM not found in the global object');
+
+  if (!this.vm.a)
+    throw new Error('[BotGuardClient]: Could not load program');
+
+  const vmFunctionsCallback = function (
+    asyncSnapshotFunction,
+    shutdownFunction,
+    passEventFunction,
+    checkCameraFunction
+  ) {
+    this.vmFunctions = {
+      asyncSnapshotFunction: asyncSnapshotFunction,
+      shutdownFunction: shutdownFunction,
+      passEventFunction: passEventFunction,
+      checkCameraFunction: checkCameraFunction
+    };
+  };
+
+  this.syncSnapshotFunction = this.vm.a(this.program, vmFunctionsCallback, true, this.userInteractionElement, function () {/** no-op */ }, [ [], [] ])[0]
+
+  // an asynchronous function runs in the background and it will eventually call
+  // `vmFunctionsCallback`, however we need to manually tell JavaScript to pass
+  // control to the things running in the background by interrupting this async
+  // function in any way, e.g. with a delay of 1ms. The loop is most probably not
+  // needed but is there just because.
+  return new Promise(function (resolve, reject) {
+    i = 0
+    refreshIntervalId = setInterval(function () {
+      if (!!this.vmFunctions.asyncSnapshotFunction) {
+        resolve(this)
+        clearInterval(refreshIntervalId);
+      }
+      if (i >= 10000) {
+        reject("asyncSnapshotFunction is null even after 10 seconds")
+        clearInterval(refreshIntervalId);
+      }
+      i += 1;
+    }, 1);
+  })
+}
+
+/**
+ * Takes a snapshot asynchronously.
+ * @returns The snapshot result.
+ * @example
+ * ```ts
+ * const result = await botguard.snapshot({
+ *   contentBinding: {
+ *     c: "a=6&a2=10&b=SZWDwKVIuixOp7Y4euGTgwckbJA&c=1729143849&d=1&t=7200&c1a=1&c6a=1&c6b=1&hh=HrMb5mRWTyxGJphDr0nW2Oxonh0_wl2BDqWuLHyeKLo",
+ *     e: "ENGAGEMENT_TYPE_VIDEO_LIKE",
+ *     encryptedVideoId: "P-vC09ZJcnM"
+ *    }
+ * });
+ *
+ * console.log(result);
+ * ```
+ */
+function snapshot(args) {
+  return new Promise(function (resolve, reject) {
+    if (!this.vmFunctions.asyncSnapshotFunction)
+      return reject(new Error('[BotGuardClient]: Async snapshot function not found'));
+
+    this.vmFunctions.asyncSnapshotFunction(function (response) { resolve(response) }, [
+      args.contentBinding,
+      args.signedTimestamp,
+      args.webPoSignalOutput,
+      args.skipPrivacyBuffer
+    ]);
+  });
+}
+
+function runBotGuard(challengeData) {
+  const interpreterJavascript = challengeData.interpreterJavascript.privateDoNotAccessOrElseSafeScriptWrappedValue;
+
+  if (interpreterJavascript) {
+    new Function(interpreterJavascript)();
+  } else throw new Error('Could not load VM');
+
+  const webPoSignalOutput = [];
+  return loadBotGuard({
+    globalName: challengeData.globalName,
+    globalObj: this,
+    program: challengeData.program
+  }).then(function (botguard) {
+    return botguard.snapshot({ webPoSignalOutput: webPoSignalOutput })
+  }).then(function (botguardResponse) {
+    return { webPoSignalOutput: webPoSignalOutput, botguardResponse: botguardResponse }
+  })
+}
+
+function obtainPoToken(webPoSignalOutput, integrityToken, identifier) {
+  const getMinter = webPoSignalOutput[0];
+
+  if (!getMinter)
+    throw new Error('PMD:Undefined');
+
+  const mintCallback = getMinter(integrityToken);
+
+  if (!(mintCallback instanceof Function))
+    throw new Error('APF:Failed');
+
+  const result = mintCallback(identifier);
+
+  if (!result)
+    throw new Error('YNJ:Undefined');
+
+  if (!(result instanceof Uint8Array))
+    throw new Error('ODM:Invalid');
+
+  return result;
+}
+</script></head><body></body></html>
+"""
+
+class PoTokenClient(private val context: Context) {
+    private val main = Handler(Looper.getMainLooper())
+    private val ready = CountDownLatch(1)
+    private val produced = CountDownLatch(1)
+
+    @Volatile private var webView: WebView? = null
+    @Volatile private var integrityToken: String? = null
+    @Volatile private var token: String? = null
+    @Volatile private var failure: String? = null
+
+    fun generate(identifier: String, timeoutMs: Long = 25_000): String? {
+        main.post { start() }
+        if (!ready.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            Log.e(POT_TAG, "botguard initialization timed out")
+            cleanup()
+            return null
+        }
+        if (failure != null) {
+            Log.e(POT_TAG, "botguard initialization failed: ${'$'}failure")
+            cleanup()
+            return null
+        }
+        main.post { mint(identifier) }
+        produced.await(timeoutMs, TimeUnit.MILLISECONDS)
+        cleanup()
+        return token
+    }
+
+    private fun start() {
+        val web = WebView(context)
+        web.settings.javaScriptEnabled = true
+        web.settings.userAgentString = POT_USER_AGENT
+        web.addJavascriptInterface(Bridge(), "PoTokenBridge")
+        web.loadDataWithBaseURL(
+            "https://www.youtube.com",
+            POT_HTML.replaceFirst("</script>", "\nPoTokenBridge.downloadAndRunBotguard()</script>"),
+            "text/html",
+            "utf-8",
+            null,
+        )
+        webView = web
+    }
+
+    private inner class Bridge {
+        @JavascriptInterface
+        fun downloadAndRunBotguard() {
+            post(
+                "https://www.youtube.com/api/jnn/v1/Create",
+                "[ \"${'$'}POT_REQUEST_KEY\" ]",
+            ) { body ->
+                val challenge = parseChallengeData(body)
+                main.post {
+                    webView?.evaluateJavascript(
+                        """try {
+                            data = ${'$'}challenge
+                            runBotGuard(data).then(function (result) {
+                                this.webPoSignalOutput = result.webPoSignalOutput
+                                PoTokenBridge.onRunBotguardResult(result.botguardResponse)
+                            }, function (error) {
+                                PoTokenBridge.onJsInitializationError(error + "\n" + error.stack)
+                            })
+                        } catch (error) {
+                            PoTokenBridge.onJsInitializationError(error + "\n" + error.stack)
+                        }""",
+                        null,
+                    )
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun onJsInitializationError(error: String) {
+            failure = error
+            ready.countDown()
+        }
+
+        @JavascriptInterface
+        fun onRunBotguardResult(botguardResponse: String) {
+            post(
+                "https://www.youtube.com/api/jnn/v1/GenerateIT",
+                "[ \"${'$'}POT_REQUEST_KEY\", \"${'$'}botguardResponse\" ]",
+            ) { body ->
+                val parsed = parseIntegrityTokenData(body)
+                integrityToken = parsed.first
+                main.post {
+                    webView?.evaluateJavascript("this.integrityToken = ${'$'}{parsed.first}", null)
+                    ready.countDown()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun onToken(u8: String) {
+            token = u8ToBase64(u8)
+            produced.countDown()
+        }
+
+        @JavascriptInterface
+        fun onMintError(error: String) {
+            failure = error
+            produced.countDown()
+        }
+    }
+
+    private fun mint(identifier: String) {
+        val web = webView
+        val integrity = integrityToken
+        if (web == null || integrity == null) {
+            produced.countDown()
+            return
+        }
+        val u8 = stringToU8(identifier)
+        web.evaluateJavascript(
+            """try {
+                var u8Identifier = ${'$'}u8;
+                var poTokenU8 = obtainPoToken(webPoSignalOutput, this.integrityToken, u8Identifier);
+                var s = "";
+                for (var i = 0; i < poTokenU8.length; i++) { if (i !== 0) s += ","; s += poTokenU8[i]; }
+                PoTokenBridge.onToken(s);
+            } catch (error) {
+                PoTokenBridge.onMintError(String(error));
+            }""",
+            null,
+        )
+    }
+
+    private fun post(url: String, data: String, onBody: (String) -> Unit) {
+        Thread {
+            try {
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("User-Agent", POT_USER_AGENT)
+                conn.setRequestProperty("Accept", "application/json")
+                conn.setRequestProperty("Content-Type", "application/json+protobuf")
+                conn.setRequestProperty("x-goog-api-key", POT_API_KEY)
+                conn.setRequestProperty("x-user-agent", "grpc-web-javascript/0.1")
+                conn.doOutput = true
+                OutputStreamWriter(conn.outputStream, "UTF-8").use { it.write(data) }
+                val code = conn.responseCode
+                val body = (if (code == 200) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code == 200) {
+                    onBody(body)
+                } else {
+                    failure = "HTTP ${'$'}code: ${'$'}body"
+                    ready.countDown()
+                }
+            } catch (e: Exception) {
+                failure = e.toString()
+                ready.countDown()
+            }
+        }.start()
+    }
+
+    private fun cleanup() {
+        main.post {
+            webView?.let { web ->
+                web.loadUrl("about:blank")
+                web.destroy()
+            }
+            webView = null
+        }
+    }
+
+    companion object {
+        /** Called from Rust over JNI. */
+        @JvmStatic
+        fun obtain(context: Context, identifier: String): String? =
+            PoTokenClient(context).generate(identifier)
+    }
+}
+
+private fun parseChallengeData(rawChallengeData: String): String {
+    val scrambled = JSONArray(rawChallengeData)
+    val challengeData = if (scrambled.length() > 1 && !scrambled.isNull(1)) {
+        JSONArray(descramble(scrambled.getString(1)))
+    } else {
+        scrambled.getJSONArray(0)
+    }
+    val interpreter = challengeData.optJSONArray(1)
+    val resourceUrl = challengeData.optJSONArray(2)
+    val out = org.json.JSONObject()
+    out.put("messageId", challengeData.getString(0))
+    val js = org.json.JSONObject()
+    js.put(
+        "privateDoNotAccessOrElseSafeScriptWrappedValue",
+        findString(interpreter),
+    )
+    js.put(
+        "privateDoNotAccessOrElseTrustedResourceUrlWrappedValue",
+        findString(resourceUrl),
+    )
+    out.put("interpreterJavascript", js)
+    out.put("interpreterHash", challengeData.getString(3))
+    out.put("program", challengeData.getString(4))
+    out.put("globalName", challengeData.getString(5))
+    out.put("clientExperimentsStateBlob", challengeData.optString(7, ""))
+    return out.toString()
+}
+
+private fun findString(array: JSONArray?): String {
+    if (array == null) return ""
+    for (i in 0 until array.length()) {
+        if (!array.isNull(i) && array.opt(i) is String) return array.getString(i)
+    }
+    return ""
+}
+
+private fun parseIntegrityTokenData(raw: String): Pair<String, Long> {
+    val array = JSONArray(raw)
+    val token = newUint8Array(base64ToBytes(array.getString(0)))
+    return token to array.optLong(1, 0L)
+}
+
+private fun descramble(scrambled: String): String {
+    val bytes = base64ToBytes(scrambled)
+    for (i in bytes.indices) bytes[i] = (bytes[i] + 97).toByte()
+    return String(bytes, Charsets.UTF_8)
+}
+
+private fun base64ToBytes(base64: String): ByteArray {
+    val normalized = base64.replace('-', '+').replace('_', '/').replace('.', '=')
+    return Base64.decode(normalized, Base64.DEFAULT)
+}
+
+private fun newUint8Array(contents: ByteArray): String =
+    "new Uint8Array([" + contents.joinToString(",") { (it.toInt() and 0xFF).toString() } + "])"
+
+private fun stringToU8(identifier: String): String =
+    newUint8Array(identifier.toByteArray(Charsets.UTF_8))
+
+private fun u8ToBase64(poToken: String): String {
+    val bytes = poToken.split(",").map { it.trim().toInt().toByte() }.toByteArray()
+    return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
 }

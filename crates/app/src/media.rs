@@ -17,6 +17,10 @@ mod imp {
     pub fn stop() -> Result<(), String> {
         Ok(())
     }
+    pub fn po_token(_identifier: String) -> Result<String, String> {
+        Err(String::from("po tokens are only available on Android"))
+    }
+
 }
 
 #[cfg(target_os = "android")]
@@ -58,9 +62,9 @@ mod imp {
         }
     }
 
-    fn with_env<F>(f: F) -> Result<(), String>
+    fn with_env<T, F>(f: F) -> Result<T, String>
     where
-        F: FnOnce(&mut jni::JNIEnv) -> Result<(), String>,
+        F: FnOnce(&mut jni::JNIEnv) -> Result<T, String>,
     {
         let ctx = ndk_context::android_context();
         let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }.map_err(|e| e.to_string())?;
@@ -132,9 +136,56 @@ mod imp {
                 .map_err(|e| format!("PlaybackService.stop: {e}"))
         })
     }
+    pub fn po_token(identifier: String) -> Result<String, String> {
+        with_env(|env| {
+            let ctx = ndk_context::android_context();
+            let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+            let id = env
+                .new_string(&identifier)
+                .map_err(|e| format!("new_string: {e}"))?;
+            let loader = env
+                .call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])
+                .map_err(|e| format!("getClassLoader: {e}"))?
+                .l()
+                .map_err(|e| format!("getClassLoader: {e}"))?;
+            let class_name = env
+                .new_string("dev.dioxus.main.PoTokenClient")
+                .map_err(|e| format!("new_string: {e}"))?;
+            let class_obj = env
+                .call_method(
+                    &loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&class_name)],
+                )
+                .map_err(|e| format!("loadClass: {e}"))?
+                .l()
+                .map_err(|e| format!("loadClass: {e}"))?;
+            let class = unsafe { JClass::from_raw(class_obj.into_raw()) };
+            let result = env
+                .call_static_method(
+                    class,
+                    "obtain",
+                    "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;",
+                    &[JValue::Object(&context), JValue::Object(&id)],
+                )
+                .map_err(|e| format!("PoTokenClient.obtain: {e}"))?;
+            let obj = result.l().map_err(|e| format!("obtain: {e}"))?;
+            if env.is_instance_of(&obj, "java/lang/String").unwrap_or(false) {
+                let text: String = env
+                    .get_string(&obj.into())
+                    .map_err(|e| format!("get_string: {e}"))?
+                    .into();
+                Ok(text)
+            } else {
+                Err(String::from("no po token returned"))
+            }
+        })
+    }
+
 }
 
-pub use imp::{pause, play, resume, stop};
+pub use imp::{pause, play, po_token, resume, stop};
 
 #[cfg(test)]
 mod tests {
