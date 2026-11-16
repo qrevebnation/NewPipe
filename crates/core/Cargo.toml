@@ -13,3 +13,6 @@ tiny_http = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 # Android: rquickjs-sys ships no aarch64-linux-android bindings; enable bindgen to generate them.
 rquickjs = { version = "0.9", default-features = false, features = ["bindgen"] }
+
+# spike: candidate replacement for the stale rustypipe extractor
+innertube-rs = "0.12"

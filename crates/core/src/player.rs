@@ -227,7 +227,7 @@ mod tests {
         {
             Ok(player) => player,
             Err(e) => {
-                println!("PROBE_ERROR={e}");
+                println!("PROBE_ERROR={e:#}");
                 return;
             }
         };
