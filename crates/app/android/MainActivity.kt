@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -15,9 +16,12 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.dash.manifest.DashManifestParser
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
+import java.io.ByteArrayInputStream
 
 typealias BuildConfig = com.example.NanopipeApp.BuildConfig
 
@@ -25,15 +29,12 @@ class MainActivity : WryActivity()
 
 /**
  * Foreground service that owns the single ExoPlayer instance for the app.
- * Managed from Rust over JNI via [play] / [pause] / [stop].
  *
- * YouTube's stream URLs are issued for a specific client, so the User-Agent that
- * Rust passes in is applied to every request.
- *
- * NOTE: googlevideo answers open-ended Range requests (what ExoPlayer uses for
- * progressive media) with 302 -> 403; it only serves bounded ranges. Playing
- * YouTube audio therefore needs a DASH source built from rustypipe's
- * init_range/index_range, which is still to be wired up.
+ * YouTube's CDN only serves BOUNDED Range requests: an open-ended range (what a
+ * progressive source asks for) answers 302 then 403. Rust therefore hands in a
+ * DASH isoff-on-demand manifest built from rustypipe's init/index ranges, and the
+ * player streams it with bounded ranges. If no manifest is supplied the service
+ * falls back to progressive playback.
  */
 class PlaybackService : Service() {
     companion object {
@@ -48,12 +49,19 @@ class PlaybackService : Service() {
         private var session: MediaSession? = null
 
         @JvmStatic
-        fun play(context: Context, url: String, title: String, userAgent: String) {
-            Log.i(TAG, "play title=$title ua=[$userAgent] urlLen=${url.length}")
+        fun play(
+            context: Context,
+            url: String,
+            title: String,
+            userAgent: String,
+            dashManifest: String,
+        ) {
+            Log.i(TAG, "play title=$title ua=[$userAgent] dash=${dashManifest.length}B urlLen=${url.length}")
             val intent = Intent(context, PlaybackService::class.java)
             intent.putExtra("url", url)
             intent.putExtra("title", title)
             intent.putExtra("userAgent", userAgent)
+            intent.putExtra("dashManifest", dashManifest)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -84,14 +92,16 @@ class PlaybackService : Service() {
         fun isPlaying(): Boolean = player?.isPlaying == true
     }
 
+    private fun httpFactory(userAgent: String): DefaultHttpDataSource.Factory =
+        DefaultHttpDataSource.Factory()
+            .setUserAgent(userAgent)
+            .setAllowCrossProtocolRedirects(true)
+
     private fun ensurePlayer(userAgent: String): ExoPlayer {
         val existing = player
         if (existing != null) return existing
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent)
-            .setAllowCrossProtocolRedirects(true)
         val created = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory(userAgent)))
             .build()
         created.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -115,13 +125,31 @@ class PlaybackService : Service() {
 
         val url = intent?.getStringExtra("url")
         if (!url.isNullOrEmpty()) {
-            val exo = ensurePlayer(intent?.getStringExtra("userAgent").orEmpty())
-            exo.setMediaItem(MediaItem.fromUri(url))
-            exo.prepare()
+            val userAgent = intent.getStringExtra("userAgent").orEmpty()
+            val dash = intent.getStringExtra("dashManifest").orEmpty()
+            val exo = ensurePlayer(userAgent)
+            val started = dash.isNotEmpty() && playDash(exo, userAgent, dash)
+            if (!started) {
+                Log.w(TAG, "falling back to progressive playback")
+                exo.setMediaItem(MediaItem.fromUri(url))
+                exo.prepare()
+            }
             exo.play()
         }
         return START_STICKY
     }
+
+    private fun playDash(engine: ExoPlayer, userAgent: String, manifestXml: String): Boolean =
+        try {
+            val manifest = DashManifestParser()
+                .parse(Uri.EMPTY, ByteArrayInputStream(manifestXml.toByteArray()))
+            engine.setMediaSource(DashMediaSource.Factory(httpFactory(userAgent)).createMediaSource(manifest))
+            engine.prepare()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "dash setup failed, will fall back", e)
+            false
+        }
 
     override fun onDestroy() {
         player?.release()

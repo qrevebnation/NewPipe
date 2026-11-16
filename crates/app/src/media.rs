@@ -85,16 +85,20 @@ mod imp {
             let agent = env
                 .new_string(&info.user_agent)
                 .map_err(|e| format!("new_string: {e}"))?;
+            let dash = env
+                .new_string(&info.dash_manifest())
+                .map_err(|e| format!("new_string: {e}"))?;
             let class = service_class(env)?;
             env.call_static_method(
                 class,
                 "play",
-                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
                 &[
                     JValue::Object(&context),
                     JValue::Object(&url),
                     JValue::Object(&title),
                     JValue::Object(&agent),
+                    JValue::Object(&dash),
                 ],
             )
             .map(|_| ())
@@ -153,6 +157,11 @@ mod tests {
             thumb_url: None,
             audio_url: String::from("https://x/a.webm"),
             audio_mime: String::from("audio/webm"),
+            audio_codec: String::from("opus"),
+            audio_bitrate: 128_000,
+            audio_index_range: Some((200, 399)),
+            audio_init_range: Some((0, 199)),
+            duration_ms: Some(1000),
             video_url: None,
             video_mime: None,
             user_agent: String::from("test-agent"),

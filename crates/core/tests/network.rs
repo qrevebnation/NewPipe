@@ -30,4 +30,7 @@ async fn selects_audio_stream() {
     println!("AUDIO_URL={}", info.audio_url);
     println!("USER_AGENT={}", info.user_agent);
     println!("has_video={}", info.video_url.is_some());
+    let xml = info.dash_manifest();
+    std::fs::write("/tmp/manifest.xml", &xml).unwrap();
+    println!("MANIFEST_LEN={}", xml.len());
 }
