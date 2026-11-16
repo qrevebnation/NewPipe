@@ -132,6 +132,7 @@ fn xml_escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
+#[cfg(test)]
 fn sample(duration_ms: Option<u32>) -> StreamInfo {
     StreamInfo {
         video_id: String::from("vid1"),

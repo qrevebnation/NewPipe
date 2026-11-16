@@ -162,6 +162,7 @@ mod tests {
             audio_index_range: Some((200, 399)),
             audio_init_range: Some((0, 199)),
             duration_ms: Some(1000),
+            audio_size: Some(2_806_189),
             video_url: None,
             video_mime: None,
             user_agent: String::from("test-agent"),

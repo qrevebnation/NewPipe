@@ -35,7 +35,7 @@ private class LoggingDataSource(private val upstream: DataSource) : BaseDataSour
     override fun open(dataSpec: DataSpec): Long {
         Log.i(
             "NanoPipeRange",
-            "open pos=${dataSpec.position} len=${dataSpec.length} flags=${dataSpec.flags}"
+            "open host=${dataSpec.uri.host}:${dataSpec.uri.port} pos=${dataSpec.position} len=${dataSpec.length} flags=${dataSpec.flags}"
         )
         return upstream.open(dataSpec)
     }

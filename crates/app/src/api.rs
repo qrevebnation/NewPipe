@@ -1,6 +1,8 @@
-use nanopipe_core::{extractor::Client, StreamInfo, VideoDetails, VideoSummary};
+use nanopipe_core::{
+    extractor::Client, proxy::StreamProxy, VideoDetails, VideoSummary,
+};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 fn candidate_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -35,20 +37,21 @@ pub fn data_dir() -> PathBuf {
     pick_writable_dir(&candidate_dirs()).unwrap_or_else(|| std::env::temp_dir().join("nanopipe"))
 }
 
-static CLIENT: OnceLock<Client> = OnceLock::new();
+static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
+static ACTIVE_PROXY: Mutex<Option<StreamProxy>> = Mutex::new(None);
 
-async fn client() -> Result<&'static Client, String> {
+async fn client() -> Result<Arc<Client>, String> {
     if let Some(c) = CLIENT.get() {
-        return Ok(c);
+        return Ok(Arc::clone(c));
     }
     let dir = data_dir();
-    let c = tokio::task::spawn_blocking(move || {
+    let created = tokio::task::spawn_blocking(move || {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         Client::new(&dir).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
-    Ok(CLIENT.get_or_init(|| c))
+    Ok(Arc::clone(CLIENT.get_or_init(|| Arc::new(created))))
 }
 
 pub async fn search(query: String, limit: usize) -> Result<Vec<VideoSummary>, String> {
@@ -56,14 +59,28 @@ pub async fn search(query: String, limit: usize) -> Result<Vec<VideoSummary>, St
     c.search(&query, limit).await.map_err(|e| e.to_string())
 }
 
-pub async fn streams(id: String) -> Result<StreamInfo, String> {
-    let c = client().await?;
-    c.streams(&id).await.map_err(|e| e.to_string())
-}
-
 pub async fn video(id: String) -> Result<VideoDetails, String> {
     let c = client().await?;
     c.video_details(&id).await.map_err(|e| e.to_string())
+}
+
+/// Starts playback through the local stream proxy. googlevideo only serves a
+/// bounded number of bytes per stream URL, so the player talks to the proxy, which
+/// keeps every request inside that budget and re-mints the URL when it runs out.
+pub async fn play(id: String) -> Result<String, String> {
+    let c = client().await?;
+    let mut info = c.streams(&id).await.map_err(|e| e.to_string())?;
+
+    let proxy = StreamProxy::start(Arc::clone(&c), &info).map_err(|e| format!("proxy: {e}"))?;
+    info.audio_url = proxy.base_url();
+    let title = info.title.clone();
+
+    if let Ok(mut slot) = ACTIVE_PROXY.lock() {
+        *slot = Some(proxy);
+    }
+
+    crate::media::play(info).map_err(|e| e.to_string())?;
+    Ok(title)
 }
 
 #[cfg(test)]

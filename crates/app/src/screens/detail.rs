@@ -1,5 +1,4 @@
 use crate::api;
-use crate::media;
 use dioxus::prelude::*;
 use nanopipe_core::{duration_label, VideoDetails};
 
@@ -47,16 +46,10 @@ fn start_play(
     play_busy.set(true);
     play_error.set(None);
     spawn(async move {
-        match api::streams(video_id).await {
-            Ok(info) => {
-                let title = info.title.clone();
-                match media::play(info) {
-                    Ok(()) => {
-                        now_playing.set(Some(title));
-                        is_playing.set(true);
-                    }
-                    Err(e) => play_error.set(Some(e)),
-                }
+        match api::play(video_id).await {
+            Ok(title) => {
+                now_playing.set(Some(title));
+                is_playing.set(true);
             }
             Err(e) => play_error.set(Some(e)),
         }
